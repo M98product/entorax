@@ -269,7 +269,6 @@ header .mnav{display:none}
   <nav aria-label="Main">
     <a href="#home">Home</a><a href="#how">How it works</a><a href="#agents">AI Space <span class="ai">AI</span></a><a href="#token">$ENTORAX</a><a href="#docs">Docs</a>
   </nav>
-  <a class="btn sm hide-m" href="#token">Connect wallet</a>
   <a class="btn sm primary" href="#agents">Launch app</a>
 </div>
 <div class="wrap mnav" aria-label="Main mobile">
@@ -738,7 +737,7 @@ window.Chat=(function(){
     let ans='';
     try{
       const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent:k,messages:turns}),signal:ctl.signal});
-      if(!res.ok || !res.body){ const e=new Error('http'); e.status=res.status; throw e; }
+      if(!res.ok || !res.body){ const e=new Error('http'); e.status=res.status; try{ e.detail=(await res.json()).error; }catch(_){ e.detail='Server error '+res.status+(res.status===404?' (api/chat not found)':''); } throw e; }
       const reader=res.body.getReader(), dec=new TextDecoder();
       for(;;){
         const {done,value}=await reader.read(); if(done) break;
@@ -751,7 +750,7 @@ window.Chat=(function(){
       body.className='';
       if(e && e.name==='AbortError'){ if(ans){ hist[k].push({role:'assistant',content:ans}); } else body.textContent='Stopped.'; }
       else if(ans){ hist[k].push({role:'assistant',content:ans}); }
-      else { body.textContent=e&&e.status===429?'Too many messages at once. Wait a moment, then send again.':'The agent couldn\'t answer this time. Send your message again.'; body.parentNode.classList.add('err'); }
+      else { body.textContent=(e&&e.status===429?'Too many messages at once. Wait a moment, then send again.':'The agent couldn\'t answer this time.')+(e&&e.detail?' ['+e.detail+']':''); body.parentNode.classList.add('err'); }
     }finally{
       save(); busy=false; sendBtn.hidden=false; stopBtn.hidden=true; document.getElementById('headSt').textContent='ONLINE';
     }
