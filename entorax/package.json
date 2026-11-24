@@ -1,0 +1,6 @@
+{
+  "name": "entorax",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" }
+}
