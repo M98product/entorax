@@ -13,7 +13,7 @@ html,body{margin:0}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 img{max-width:100%}
 [hidden]{display:none!important}
-/* Layout: dark studio floor, wide extended display type, one view per tab (hash routed), voxel scene fixed right, CA strip pinned on top */
+/* Layout: dark studio floor, wide extended display type, one view per tab (hash routed), voxel scene fixed right, CA chip in header */
 :root{
   --bg:#0a0a09; --bg-2:#131311; --bg-3:#1b1b18; --fg:#f3f1ea; --muted:#8d8b82; --soft:#bdbab1;
   --lime:#d4ff00; --lime-dim:rgba(212,255,0,.12);
@@ -25,7 +25,7 @@ img{max-width:100%}
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.6;overflow-x:hidden}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:60;background:var(--lime)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:60;background:var(--bg)}
 .dots{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:radial-gradient(rgba(243,241,234,.09) 1px,transparent 1.2px);background-size:28px 28px;mask-image:radial-gradient(ellipse at 70% 40%,#000 20%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse at 70% 40%,#000 20%,transparent 75%)}
 #scene{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;transition:opacity .6s}
 body[data-view="agents"] #scene{opacity:.12}
@@ -38,23 +38,18 @@ body:not([data-view="home"]):not([data-view="how"]) #labels{display:none}
 .tag b{font-weight:600;color:var(--fg)}
 .tag i{font-style:normal;color:var(--muted)}
 
-.strip,header,main,footer{position:relative;z-index:3}
+header,main,footer{position:relative;z-index:3}
 .wrap{max-width:1280px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .mono{font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.1em;font-size:12px}
 
-/* CA strip */
-.strip{background:var(--lime);color:#0a0a09}
-.strip .wrap{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding-block:7px;font:600 12px var(--f-mono);letter-spacing:.06em;text-transform:uppercase}
-.ca-pill{display:inline-flex;align-items:stretch;border:1.5px solid #0a0a09;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.35);max-width:100%}
-.ca-pill span{padding:4px 10px;display:flex;align-items:center;gap:8px;min-width:0}
-.ca-pill .addr{font-weight:500;text-transform:none;letter-spacing:.02em;overflow-wrap:anywhere}
-.ca-pill .addr em{font-style:normal;opacity:.55}
-.copy{border:0;border-left:1.5px solid #0a0a09;background:#0a0a09;color:var(--lime);font:600 11px var(--f-mono);letter-spacing:.08em;padding:4px 10px;cursor:pointer;display:flex;align-items:center;gap:6px}
-.copy:hover{background:#262622}
-.soon{display:inline-flex;align-items:center;gap:6px}
-.soon::before{content:"";width:7px;height:7px;border-radius:50%;background:#0a0a09;animation:blink 1.4s steps(2) infinite}
-@keyframes blink{50%{opacity:.2}}
-
+/* CA chip next to Launch app */
+.ca-mini{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 4px 0 12px;border:1px solid var(--line-2);border-radius:999px;font:500 12px var(--f-mono);color:var(--muted);flex:none}
+.ca-mini .tk{color:var(--lime);font-weight:600;letter-spacing:.08em}
+.ca-mini .addr{color:var(--fg);letter-spacing:.02em}
+.ca-mini .copy{width:30px;height:30px;border-radius:50%;border:0;background:var(--bg-3);color:var(--fg);cursor:pointer;display:grid;place-items:center;position:relative}
+.ca-mini .copy:hover{background:var(--lime);color:#0a0a09}
+.ca-mini .copy.done{background:var(--lime);color:#0a0a09}
+.ca-tip{position:absolute;top:calc(100% + 8px);right:0;white-space:nowrap;background:var(--fg);color:#0a0a09;font:600 11px var(--f-mono);padding:5px 8px;border-radius:6px;pointer-events:none}
 header{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:rgba(10,10,9,.78);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 header .wrap{display:flex;align-items:center;gap:28px;padding-block:12px}
 .brand{display:flex;align-items:center;gap:12px;font:800 20px/1 var(--f-display);font-stretch:125%;letter-spacing:.02em;color:var(--fg);text-decoration:none;text-transform:uppercase}
@@ -235,7 +230,7 @@ header .mnav{display:none}
 }
 @media (max-width:560px){
   .hud .lbl{display:none}
-  .strip .lbl-long{display:none}
+  .ca-mini .addr{display:none}
   .msg{max-width:92%}
   .phase-tabs button{font-size:9.5px}
 }
@@ -250,17 +245,6 @@ header .mnav{display:none}
 <div id="labels" aria-hidden="true"></div>
 
 <!-- Paste the contract address into CONTRACT_ADDRESS (script below) on launch day -->
-<div class="strip"><div class="wrap">
-  <span class="soon lbl-long">$ENTORAX · Launching soon</span>
-  <div class="ca-pill">
-    <span>CA</span>
-    <span class="addr" id="ca">0x<em>····················</em> not live yet</span>
-    <button class="copy" type="button" data-copy aria-label="Copy contract address">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="lbl">COPY</span>
-    </button>
-  </div>
-</div></div>
-
 <header><div class="wrap">
   <a class="brand" href="#home">
     <svg width="26" height="29" viewBox="0 0 511 564" aria-hidden="true"><path fill="#f3f1ea" d="M0 2H367V114H117V341H304V564H184V456H0Z"/><path fill="#f3f1ea" d="M212 177H511V487H389V291H212Z"/><rect fill="#d4ff00" x="404" y="0" width="107" height="112"/></svg>
@@ -269,6 +253,11 @@ header .mnav{display:none}
   <nav aria-label="Main">
     <a href="#home">Home</a><a href="#how">How it works</a><a href="#agents">AI Space <span class="ai">AI</span></a><a href="#token">$ENTORAX</a><a href="#docs">Docs</a>
   </nav>
+  <div class="ca-mini" title="$ENTORAX contract address">
+    <span class="tk">CA</span>
+    <span class="addr" id="ca">soon</span>
+    <button class="copy" type="button" data-copy aria-label="Copy contract address"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="lbl" hidden></span></button>
+  </div>
   <a class="btn sm primary" href="#agents">Launch app</a>
 </div>
 <div class="wrap mnav" aria-label="Main mobile">
@@ -609,14 +598,17 @@ return api;
 /* Paste the address here on launch, e.g. "0xAbC...123" */
 const CONTRACT_ADDRESS = "";
 (function(){
-  if(CONTRACT_ADDRESS){ document.getElementById('ca').textContent=CONTRACT_ADDRESS; document.getElementById('caBig').textContent=CONTRACT_ADDRESS; }
+  if(CONTRACT_ADDRESS){ document.getElementById('ca').textContent=CONTRACT_ADDRESS.slice(0,6)+'…'+CONTRACT_ADDRESS.slice(-4); document.getElementById('caBig').textContent=CONTRACT_ADDRESS; }
   document.querySelectorAll('[data-copy]').forEach(btn=>{
-    const lbl=btn.querySelector('.lbl')||btn, orig=lbl.textContent;
+    const mini=btn.closest('.ca-mini'), lbl=btn.querySelector('.lbl')||btn, orig=lbl.textContent;
+    function flash(msg){
+      if(mini){ let tip=btn.querySelector('.ca-tip'); if(!tip){ tip=document.createElement('span'); tip.className='ca-tip'; btn.appendChild(tip); } tip.textContent=msg; btn.classList.add('done'); setTimeout(()=>{ tip.remove(); btn.classList.remove('done'); },1600); }
+      else { lbl.textContent=msg.toUpperCase(); setTimeout(()=>lbl.textContent=orig,1600); }
+    }
     btn.onclick=async()=>{
-      if(!CONTRACT_ADDRESS){ lbl.textContent='SOON'; setTimeout(()=>lbl.textContent=orig,1600); return; }
-      try{ await navigator.clipboard.writeText(CONTRACT_ADDRESS); lbl.textContent='COPIED ✓'; }
-      catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById('ca')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); lbl.textContent='SELECTED'; }
-      setTimeout(()=>lbl.textContent=orig,1600);
+      if(!CONTRACT_ADDRESS){ flash('Not live yet'); return; }
+      try{ await navigator.clipboard.writeText(CONTRACT_ADDRESS); flash('Copied ✓'); }
+      catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById(mini?'ca':'caBig')); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); flash('Selected'); }
     };
   });
 })();
