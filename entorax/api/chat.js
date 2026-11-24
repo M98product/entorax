@@ -1,9 +1,30 @@
 // Chat function for Vercel, powered by Groq.
 // Needs the GROQ_API_KEY environment variable (Vercel > Settings > Environment Variables).
-// Optional: GROQ_MODEL to change the model without touching the code.
+// Optional: GROQ_MODEL to force a model. Otherwise the best available chat model is picked automatically.
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const MODELS_URL = "https://api.groq.com/openai/v1/models";
+// Preferred chat models, best first. The first one Groq still offers wins.
+const PREFERRED = [/gpt-oss-120b/i, /llama-4-maverick/i, /kimi-k2/i, /llama-4/i, /qwen/i, /llama-3\.3-70b/i, /gpt-oss/i, /llama/i];
+const NOT_CHAT = /whisper|tts|guard|embed|playai|orpheus|distil|compound|safeguard|prompt/i;
+let cachedModel = null;
+
+async function pickModel(key) {
+  if (process.env.GROQ_MODEL) return process.env.GROQ_MODEL;
+  if (cachedModel) return cachedModel;
+  const r = await fetch(MODELS_URL, { headers: { Authorization: `Bearer ${key}` } });
+  if (!r.ok) throw new Error(`Groq ${r.status} while listing models`);
+  const ids = ((await r.json()).data || [])
+    .filter((m) => m.active !== false)
+    .map((m) => m.id)
+    .filter((id) => !NOT_CHAT.test(id));
+  for (const re of PREFERRED) {
+    const hit = ids.find((id) => re.test(id));
+    if (hit) return (cachedModel = hit);
+  }
+  if (!ids.length) throw new Error("Groq offers no chat model for this key");
+  return (cachedModel = ids[0]);
+}
 const MAX_TURNS = 16;
 const MAX_CHARS = 4000;
 
@@ -60,6 +81,14 @@ export default async function handler(req, res) {
   const ctl = new AbortController();
   req.on("close", () => ctl.abort());
 
+  let model;
+  try {
+    model = await pickModel(process.env.GROQ_API_KEY);
+  } catch (err) {
+    console.error("model pick failed", err);
+    return res.status(502).json({ error: String(err.message || err).slice(0, 300) });
+  }
+
   let upstream;
   try {
     upstream = await fetch(GROQ_URL, {
@@ -70,7 +99,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         stream: true,
         max_tokens: 1200,
         temperature: 0.6,
@@ -86,6 +115,7 @@ export default async function handler(req, res) {
   if (!upstream.ok || !upstream.body) {
     const raw = await upstream.text().catch(() => "");
     console.error("groq error", upstream.status, raw);
+    if (upstream.status === 404) cachedModel = null; // model gone: pick again next time
     let detail = "";
     try { detail = JSON.parse(raw).error?.message || ""; } catch {}
     return res.status(upstream.status === 429 ? 429 : 502).json({ error: `Groq ${upstream.status}: ${detail || "no details"}`.slice(0, 300) });
