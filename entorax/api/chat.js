@@ -1,119 +1,781 @@
-// Chat function for Vercel, powered by Groq.
-// Needs the GROQ_API_KEY environment variable (Vercel > Settings > Environment Variables).
-// Optional: GROQ_MODEL to change the model without touching the code.
-
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-const MAX_TURNS = 16;
-const MAX_CHARS = 4000;
-
-const ROLES = {
-  team: "the Entorax Team coordinator. You speak for four specialists (Strategist, Designer, CFO, Legal). For a new idea, give a quick verdict, then one line per specialist on what they would do first, labelled with their name.",
-  strategist: "the Strategist. You handle market sizing, target customers, competitors, positioning and pricing.",
-  designer: "the Designer. You handle naming, brand identity, tone of voice and landing page structure.",
-  cfo: "the CFO. You handle cost structure, revenue model, simple forecasts, break-even and funding options, including community raising with an on-chain project wallet.",
-  legal: "Legal. You explain company types, setup steps, required documents and common pitfalls, in general terms, noting that rules depend on the country.",
-};
-
-const systemPrompt = (agent) => `You are ${ROLES[agent]} You work at Entorax, an AI co-founder platform that helps people turn an idea into a real business, with project wallets on Robinhood Chain.
-Rules:
-- Reply in the same language as the user's last message.
-- Be concrete and practical. Keep answers under 180 words.
-- Use short lines and "- " bullet lists. You may bold key words with **double asterisks**. No headings, no tables.
-- Label any number you estimate as an estimate. Never invent facts about the user.
-- For legal or financial matters, give general guidance and recommend checking with a qualified professional.
-- Never promote a token, promise returns or give investment advice.
-- End with one short follow-up question that moves the project forward.`;
-
-// Keep only valid turns, merge consecutive same-role turns, start and end on a user turn.
-function cleanMessages(raw) {
-  if (!Array.isArray(raw)) return null;
-  const out = [];
-  for (const m of raw.slice(-MAX_TURNS)) {
-    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
-    const content = m.content.slice(0, MAX_CHARS).trim();
-    if (!content) continue;
-    const last = out[out.length - 1];
-    if (last && last.role === m.role) last.content += "\n\n" + content;
-    else out.push({ role: m.role, content });
-  }
-  while (out.length && out[0].role !== "user") out.shift();
-  if (!out.length || out[out.length - 1].role !== "user") return null;
-  return out;
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Entorax</title>
+<meta name="description" content="Entorax: describe your idea, a team of AI agents turns it into a company. Built on Robinhood Chain.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-60 -60 631 684%22%3E%3Crect x=%22-60%22 y=%22-60%22 width=%22631%22 height=%22684%22 rx=%22120%22 fill=%22%230a0a09%22/%3E%3Cpath fill=%22%23f3f1ea%22 d=%22M0 2H367V114H117V341H304V564H184V456H0Z%22/%3E%3Cpath fill=%22%23f3f1ea%22 d=%22M212 177H511V487H389V291H212Z%22/%3E%3Crect fill=%22%23d4ff00%22 x=%22404%22 y=%220%22 width=%22107%22 height=%22112%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+html,body{margin:0}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+img{max-width:100%}
+[hidden]{display:none!important}
+/* Layout: dark studio floor, wide extended display type, one view per tab (hash routed), voxel scene fixed right, CA strip pinned on top */
+:root{
+  --bg:#0a0a09; --bg-2:#131311; --bg-3:#1b1b18; --fg:#f3f1ea; --muted:#8d8b82; --soft:#bdbab1;
+  --lime:#d4ff00; --lime-dim:rgba(212,255,0,.12);
+  --line:rgba(243,241,234,.055); --line-2:rgba(243,241,234,.14);
+  --f-display:"Archivo","Arial Black",system-ui,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
 }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.6;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:60;background:var(--lime)}
+.dots{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:radial-gradient(rgba(243,241,234,.09) 1px,transparent 1.2px);background-size:28px 28px;mask-image:radial-gradient(ellipse at 70% 40%,#000 20%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse at 70% 40%,#000 20%,transparent 75%)}
+#scene{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;transition:opacity .6s}
+body[data-view="agents"] #scene{opacity:.12}
+.glow{position:fixed;right:-15vw;top:5vh;width:65vw;height:65vw;border-radius:50%;background:radial-gradient(circle,rgba(212,255,0,.07),transparent 60%);z-index:0;pointer-events:none}
+#labels{position:fixed;inset:0;z-index:2;pointer-events:none}
+body:not([data-view="home"]):not([data-view="how"]) #labels{display:none}
+.tag{position:absolute;left:0;top:0;display:flex;align-items:center;gap:8px;padding:6px 10px 6px 8px;border-radius:999px;background:rgba(19,19,17,.82);border:1px solid var(--line-2);backdrop-filter:blur(6px);font:500 10.5px/1 var(--f-mono);letter-spacing:.06em;white-space:nowrap;will-change:transform;transition:opacity .3s}
+.tag::before{content:"";position:absolute;left:-26px;top:50%;width:24px;height:1px;background:var(--line-2)}
+.tag .d{width:7px;height:7px;border-radius:50%}
+.tag b{font-weight:600;color:var(--fg)}
+.tag i{font-style:normal;color:var(--muted)}
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Use POST." });
+.strip,header,main,footer{position:relative;z-index:3}
+.wrap{max-width:1280px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.mono{font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.1em;font-size:12px}
+
+/* CA strip */
+.strip{background:var(--lime);color:#0a0a09}
+.strip .wrap{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding-block:7px;font:600 12px var(--f-mono);letter-spacing:.06em;text-transform:uppercase}
+.ca-pill{display:inline-flex;align-items:stretch;border:1.5px solid #0a0a09;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.35);max-width:100%}
+.ca-pill span{padding:4px 10px;display:flex;align-items:center;gap:8px;min-width:0}
+.ca-pill .addr{font-weight:500;text-transform:none;letter-spacing:.02em;overflow-wrap:anywhere}
+.ca-pill .addr em{font-style:normal;opacity:.55}
+.copy{border:0;border-left:1.5px solid #0a0a09;background:#0a0a09;color:var(--lime);font:600 11px var(--f-mono);letter-spacing:.08em;padding:4px 10px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.copy:hover{background:#262622}
+.soon{display:inline-flex;align-items:center;gap:6px}
+.soon::before{content:"";width:7px;height:7px;border-radius:50%;background:#0a0a09;animation:blink 1.4s steps(2) infinite}
+@keyframes blink{50%{opacity:.2}}
+
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:rgba(10,10,9,.78);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:28px;padding-block:12px}
+.brand{display:flex;align-items:center;gap:12px;font:800 20px/1 var(--f-display);font-stretch:125%;letter-spacing:.02em;color:var(--fg);text-decoration:none;text-transform:uppercase}
+nav{display:flex;gap:4px;flex:1;justify-content:center}
+nav a{font:500 13px var(--f-body);color:var(--muted);text-decoration:none;padding:7px 14px;border-radius:999px;display:inline-flex;align-items:center;gap:7px}
+nav a:hover{color:var(--fg);background:var(--bg-3)}
+nav a[aria-current="page"]{color:#0a0a09;background:var(--fg)}
+nav a .ai{font:600 9px var(--f-mono);background:var(--lime);color:#0a0a09;border-radius:4px;padding:2px 5px;letter-spacing:.06em}
+.btn{font:600 14px var(--f-body);padding:12px 20px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--fg);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:background .15s,border-color .15s,transform .15s}
+.btn:hover{border-color:var(--fg)}
+.btn.primary{background:var(--lime);border-color:var(--lime);color:#0a0a09}
+.btn.primary:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(212,255,0,.25)}
+.btn.sm{padding:9px 16px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
+:focus-visible{outline:2px solid var(--lime);outline-offset:3px}
+
+/* views */
+.view{min-height:calc(100vh - 110px);display:flex;align-items:center;padding-block:48px}
+.view > .wrap{width:100%}
+.view.in .col,.view.in .space{animation:rise .5s cubic-bezier(.2,.7,.2,1)}
+@keyframes rise{from{opacity:.0;transform:translateY(14px)}}
+.col{max-width:640px;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line-2);border-radius:999px;padding:6px 14px 6px 6px;font:500 12px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.badge b{background:var(--lime);color:#0a0a09;border-radius:999px;padding:3px 9px;font-weight:600}
+h1,h2{font-family:var(--f-display);font-weight:800;font-stretch:125%;text-transform:uppercase;line-height:.95;letter-spacing:-.01em;margin:0;text-wrap:balance}
+h1{font-size:clamp(40px,6.2vw,92px);margin-top:24px}
+h2{font-size:clamp(34px,4.8vw,70px);margin-top:14px}
+.out{color:transparent;-webkit-text-stroke:1.5px var(--fg)}
+.lime{color:var(--lime)}
+.eyebrow{color:var(--lime)}
+.lead{font-size:18px;color:var(--soft);max-width:540px;margin:22px 0 0}
+.ctas{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
+
+/* home launcher */
+.launch{margin-top:34px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:14px;max-width:620px;overflow:hidden}
+.launch .bar{display:flex;justify-content:space-between;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line);font:500 11px var(--f-mono);letter-spacing:.1em;color:var(--muted)}
+.launch .bar .live{color:var(--lime)}
+.launch label{display:block;padding:14px 16px 0;font:500 11px var(--f-mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.launch textarea{width:100%;background:transparent;border:0;resize:none;color:var(--fg);font:400 16px/1.5 var(--f-body);padding:8px 16px 12px;min-height:70px}
+.launch .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 16px 16px;flex-wrap:wrap}
+.launch .row .mono{color:#6a6861;font-size:10px}
+
+/* how */
+.phase-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:30px;max-width:620px}
+.phase-tabs button{background:transparent;border:0;border-top:3px solid var(--line-2);color:var(--muted);text-align:left;padding:10px 0 0;cursor:pointer;font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase}
+.phase-tabs button[aria-selected="true"]{border-color:var(--lime);color:var(--fg)}
+.phase-tabs button:hover{color:var(--fg)}
+.phase-panel{margin-top:30px;min-height:290px}
+.phase-panel .num{font:900 clamp(70px,9vw,130px)/.8 var(--f-display);font-stretch:125%;color:transparent;-webkit-text-stroke:1px rgba(243,241,234,.28)}
+.phase-panel h3{font:800 clamp(30px,3.8vw,54px)/1 var(--f-display);font-stretch:125%;text-transform:uppercase;margin:16px 0 0}
+.phase-panel p{font-size:18px;color:var(--soft);max-width:520px;margin:16px 0 0}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.chips span,.chips button{font:500 12px var(--f-body);border:1px solid var(--line-2);background:rgba(19,19,17,.7);border-radius:999px;padding:6px 12px;color:#d5d2c9}
+.chips button{cursor:pointer;text-align:left}
+.chips button:hover{border-color:var(--lime);color:var(--fg)}
+
+/* AI space */
+.space{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;height:calc(100vh - 170px);min-height:540px}
+.side{background:var(--bg-2);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px;min-width:0;overflow:auto}
+.side .mono{color:var(--muted);font-size:10.5px;padding:6px 8px}
+.ag{display:flex;align-items:center;gap:12px;padding:10px;border-radius:12px;border:1px solid transparent;background:transparent;color:var(--fg);cursor:pointer;text-align:left;width:100%}
+.ag:hover{background:var(--bg-3)}
+.ag[aria-pressed="true"]{background:var(--bg-3);border-color:var(--line-2)}
+.av{display:grid;place-items:center;flex:none;width:42px;height:42px;border-radius:12px;background:var(--av-bg);color:var(--av-fg);border:2px solid var(--av-bd)}
+.av svg{width:22px;height:22px;display:block}
+.ag .sep{width:1px;height:30px;background:var(--line-2);flex:none}
+.ag b{display:block;font:600 14px var(--f-body)}
+.ag small{display:block;color:var(--muted);font-size:12px;line-height:1.3}
+.side .foot{margin-top:auto;border-top:1px solid var(--line);padding:12px 8px 2px;font-size:12px;color:var(--muted)}
+.chat{background:var(--bg-2);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;min-width:0;min-height:0}
+.chat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.chat-head .who{display:flex;align-items:center;gap:12px;min-width:0}
+.chat-head .who b{font:800 16px var(--f-display);font-stretch:125%;text-transform:uppercase}
+.chat-head .st{display:flex;align-items:center;gap:6px;font:500 11px var(--f-mono);color:var(--muted);letter-spacing:.06em}
+.chat-head .st::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime)}
+.ghost-btn{background:transparent;border:1px solid var(--line-2);color:var(--muted);border-radius:999px;padding:6px 12px;font:500 12px var(--f-body);cursor:pointer}
+.ghost-btn:hover{color:var(--fg);border-color:var(--fg)}
+.msgs{flex:1;overflow:auto;padding:22px 18px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.msg{max-width:78%;padding:12px 15px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.55}
+.msg.user{align-self:flex-end;background:var(--lime);color:#0a0a09;border-bottom-right-radius:4px}
+.msg.assistant{align-self:flex-start;background:var(--bg-3);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.assistant strong{color:var(--lime);font-weight:600}
+.msg.err{border-color:rgba(255,138,92,.5);color:#ffb59a}
+.msg .by{display:block;font:500 10px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.thinking::after{content:"";display:inline-block;width:1.4em;text-align:left;animation:dots 1.2s steps(4) infinite}
+@keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+.welcome{margin:auto 0;text-align:left;max-width:560px}
+.welcome h3{font:800 clamp(26px,3vw,40px)/1 var(--f-display);font-stretch:125%;text-transform:uppercase;margin:0}
+.welcome p{color:var(--soft);margin:12px 0 0}
+.compose{display:flex;gap:10px;align-items:flex-end;padding:12px;border-top:1px solid var(--line)}
+.compose textarea{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line-2);border-radius:12px;color:var(--fg);font:400 15px/1.45 var(--f-body);padding:11px 14px;resize:none;max-height:160px}
+.compose textarea:focus{border-color:var(--lime);outline:none}
+.note{font-size:12px;color:var(--muted);padding:0 14px 10px}
+
+/* token */
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:30px;max-width:720px}
+.card{background:rgba(19,19,17,.85);border:1px solid var(--line);border-radius:16px;padding:18px;min-width:0}
+.card .mono{color:var(--muted);font-size:10.5px}
+.card b{display:block;font:800 24px/1.1 var(--f-display);font-stretch:125%;text-transform:uppercase;margin-top:8px}
+.card p{margin:8px 0 0;color:var(--soft);font-size:14px}
+.ca-big{margin-top:26px;display:flex;align-items:stretch;max-width:720px;border:1px solid var(--line-2);border-radius:14px;overflow:hidden;background:rgba(19,19,17,.85)}
+.ca-big span{padding:14px 16px;font:500 14px var(--f-mono);display:flex;align-items:center;min-width:0;overflow-wrap:anywhere}
+.ca-big span:first-child{color:var(--lime);border-right:1px solid var(--line-2)}
+.ca-big span.v{flex:1;color:var(--muted)}
+.ca-big button{border:0;background:var(--lime);color:#0a0a09;font:600 12px var(--f-mono);letter-spacing:.08em;padding:0 18px;cursor:pointer}
+
+/* docs */
+.docs{margin-top:28px;max-width:680px;display:flex;flex-direction:column;gap:8px}
+.docs details{background:rgba(19,19,17,.85);border:1px solid var(--line);border-radius:14px;padding:4px 18px}
+.docs summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:12px;padding:14px 0;font:600 16px var(--f-body)}
+.docs summary::-webkit-details-marker{display:none}
+.docs summary::after{content:"+";color:var(--lime);font:600 18px var(--f-mono)}
+.docs details[open] summary::after{content:"−"}
+.docs details p{margin:0 0 16px;color:var(--soft)}
+
+/* home: long scroll landing */
+.view.home{display:block;padding:0;min-height:0}
+.home .hero,.pillar,.final{display:flex;align-items:center}
+.home .hero > .wrap,.pillar > .wrap,.final > .wrap{width:100%}
+.home .hero{min-height:calc(100vh - 110px);padding-block:48px 80px}
+.how-head{padding-top:100px}
+.pillar{min-height:86vh;padding-block:60px}
+.pillar .num{font:900 clamp(80px,12vw,180px)/.8 var(--f-display);font-stretch:125%;color:transparent;-webkit-text-stroke:1px rgba(243,241,234,.28)}
+.pillar h2{font-size:clamp(40px,6vw,88px);margin-top:18px}
+.pillar p{font-size:18px;color:var(--soft);max-width:500px;margin:20px 0 0}
+.steps{display:flex;gap:6px;margin-top:30px;max-width:500px}
+.steps i{flex:1;height:3px;border-radius:3px;background:var(--line-2)}
+.steps i.on{background:var(--lime)}
+.swarm{padding-block:120px 90px}
+.swarm h2{margin:14px 0 44px;max-width:920px}
+.agents{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.agent{background:var(--bg-2);border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0;color:var(--fg);text-decoration:none;transition:border-color .2s,transform .2s}
+.agent:hover{border-color:var(--lime);transform:translateY(-3px)}
+.agent .id{display:flex;justify-content:space-between;align-items:center;font:500 11px var(--f-mono);letter-spacing:.08em;color:var(--muted)}
+.agent .id span{display:inline-flex;align-items:center;gap:7px}
+.agent .id{justify-content:flex-start;gap:12px}
+.agent .id span{margin-right:auto}
+.agent .id .av{width:48px;height:48px;border-radius:13px}
+.agent .id .av svg{width:26px;height:26px}
+.agent h3{font:800 26px/1 var(--f-display);font-stretch:125%;text-transform:uppercase;margin:0}
+.agent p{margin:0;color:#aeaba2;font-size:15px}
+.agent ul{list-style:none;margin:auto 0 0;padding:14px 0 0;border-top:1px solid var(--line);font:400 12px/1.95 var(--f-mono);color:var(--muted)}
+.agent ul li::before{content:"+ ";color:var(--lime)}
+.agent .open{font:600 13px var(--f-body);color:var(--lime)}
+.ticker{position:relative;z-index:3;border-block:1px solid var(--line-2);overflow:hidden;white-space:nowrap;background:var(--bg)}
+.ticker div{display:inline-block;padding:18px 0;animation:tick 44s linear infinite;font:800 22px var(--f-display);font-stretch:125%;text-transform:uppercase}
+.ticker em{font-style:normal;color:var(--lime);margin:0 26px}
+@keyframes tick{to{transform:translateX(-50%)}}
+.final{min-height:80vh;padding-block:120px}
+.final h2{font-size:clamp(44px,7.4vw,112px)}
+@media (max-width:980px){.agents{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.agents{grid-template-columns:1fr}}
+
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-block:20px 90px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+
+.hud{position:fixed;right:max(16px,calc(env(safe-area-inset-right,0px) + 16px));bottom:calc(env(safe-area-inset-bottom,0px) + 16px);z-index:40;background:rgba(19,19,17,.9);backdrop-filter:blur(8px);border:1px solid var(--line-2);border-radius:999px;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;font:500 11px var(--f-mono);letter-spacing:.08em;color:var(--muted)}
+body[data-view="agents"] .hud{display:none}
+.hud .rec{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 10px var(--lime)}
+.hud b{color:var(--fg);font-weight:600}
+.hud button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line-2);background:transparent;color:var(--fg);cursor:pointer;display:grid;place-items:center}
+.hud button:hover{background:var(--lime);color:#0a0a09;border-color:var(--lime)}
+
+header .mnav{display:none}
+.mnav a{flex:none;font:500 13px var(--f-body);color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:999px;border:1px solid var(--line-2)}
+.mnav a[aria-current="page"]{background:var(--fg);color:#0a0a09;border-color:var(--fg)}
+@media (max-width:980px){
+  nav,.hide-m{display:none}
+  #scene{opacity:.4}
+  #labels{display:none}
+  header .mnav{display:flex;gap:6px;overflow-x:auto;padding-block:0 10px;scrollbar-width:none}
+  .space{grid-template-columns:1fr;height:auto}
+  .side{flex-direction:row;overflow-x:auto;padding:8px}
+  .side .mono,.side .foot{display:none}
+  .ag{flex:none;width:auto}
+  .ag small{display:none}
+  .chat{height:calc(100vh - 230px);min-height:480px}
+  .cards{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .hud .lbl{display:none}
+  .strip .lbl-long{display:none}
+  .msg{max-width:92%}
+  .phase-tabs button{font-size:9.5px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="dots" aria-hidden="true"></div>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="glow" aria-hidden="true"></div>
+<div id="labels" aria-hidden="true"></div>
+
+<!-- Paste the contract address into CONTRACT_ADDRESS (script below) on launch day -->
+<div class="strip"><div class="wrap">
+  <span class="soon lbl-long">$ENTORAX · Launching soon</span>
+  <div class="ca-pill">
+    <span>CA</span>
+    <span class="addr" id="ca">0x<em>····················</em> not live yet</span>
+    <button class="copy" type="button" data-copy aria-label="Copy contract address">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="lbl">COPY</span>
+    </button>
+  </div>
+</div></div>
+
+<header><div class="wrap">
+  <a class="brand" href="#home">
+    <svg width="26" height="29" viewBox="0 0 511 564" aria-hidden="true"><path fill="#f3f1ea" d="M0 2H367V114H117V341H304V564H184V456H0Z"/><path fill="#f3f1ea" d="M212 177H511V487H389V291H212Z"/><rect fill="#d4ff00" x="404" y="0" width="107" height="112"/></svg>
+    Entorax
+  </a>
+  <nav aria-label="Main">
+    <a href="#home">Home</a><a href="#how">How it works</a><a href="#agents">AI Space <span class="ai">AI</span></a><a href="#token">$ENTORAX</a><a href="#docs">Docs</a>
+  </nav>
+  <a class="btn sm primary" href="#agents">Launch app</a>
+</div>
+<div class="wrap mnav" aria-label="Main mobile">
+  <a href="#home">Home</a><a href="#how">How it works</a><a href="#agents">AI Space</a><a href="#token">$ENTORAX</a><a href="#docs">Docs</a>
+</div></header>
+
+<main>
+  <!-- HOME -->
+  <div class="view home" id="v-home">
+  <section class="hero" data-shape="0"><div class="wrap"><div class="col">
+    <span class="badge"><b>BETA</b> AI agents · Robinhood Chain</span>
+    <h1>Your idea,<br><span class="out">our agents,</span><br><span class="lime">your company.</span></h1>
+    <p class="lead">Tell us your project like you'd tell a friend. Entorax puts a team of AI agents on it: market, brand, numbers, legal setup, and a project wallet on Robinhood Chain.</p>
+    <form class="launch" id="launch">
+      <div class="bar"><span>ENTORAX / NEW PROJECT</span><span class="live">● 4 AGENTS READY</span></div>
+      <label for="idea">Describe your project</label>
+      <textarea id="idea" rows="2">A roasted coffee brand in Lyon, delivered by bike, with a monthly subscription.</textarea>
+      <div class="row">
+        <span class="mono">Opens the AI Space</span>
+        <button class="btn primary sm" type="submit">Start with the agents →</button>
+      </div>
+    </form>
+  </div></div></section>
+
+  <div class="wrap how-head">
+    <span class="eyebrow mono">How it works</span>
+    <h2>Four phases.<br><span class="out">No blank page.</span></h2>
+  </div>
+
+  <section class="pillar" data-shape="1"><div class="wrap"><div class="col">
+    <div class="num">01</div>
+    <h2>You tell</h2>
+    <p>One sentence, a voice note, a sketch. The agent asks the right questions until the idea stands up: who it's for, why they'd pay, and how much.</p>
+    <div class="steps"><i class="on"></i><i></i><i></i><i></i></div>
+  </div></div></section>
+
+  <section class="pillar" data-shape="2"><div class="wrap"><div class="col">
+    <div class="num">02</div>
+    <h2>They <span class="lime">research</span></h2>
+    <p>Market size, competitors, real prices. The data stacks up and the Strategist shows you where there is room.</p>
+    <div class="chips"><span>Market study</span><span>Competitor map</span><span>Persona</span><span>Pricing</span></div>
+    <div class="steps"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+  </div></div></section>
+
+  <section class="pillar" data-shape="3"><div class="wrap"><div class="col">
+    <div class="num">03</div>
+    <h2>They build</h2>
+    <p>Name, logo, landing page, 36-month forecast, company type. Block by block, and you approve each step before the next.</p>
+    <div class="chips"><span>Brand identity</span><span>Site v1</span><span>Forecast</span><span>Legal checklist</span></div>
+    <div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+  </div></div></section>
+
+  <section class="pillar" data-shape="0"><div class="wrap"><div class="col">
+    <div class="num">04</div>
+    <h2>You <span class="lime">launch</span></h2>
+    <p>Your project gets its own wallet on Robinhood Chain: get paid, pay suppliers, raise from your community. Every move is traceable.</p>
+    <div class="chips"><span>Project wallet</span><span>Payments</span><span>Community raise</span></div>
+    <div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+  </div></div></section>
+
+  <section class="swarm" data-shape="1"><div class="wrap">
+    <span class="eyebrow mono">The team</span>
+    <h2>Four agents <span class="out">working</span> <span class="lime">at once.</span></h2>
+    <div class="agents">
+      <a class="agent" href="#agents" data-agent="strategist" style="--c:#d4ff00">
+        <div class="id"><span>STRATEGIST</span>01</div>
+        <h3>Market</h3><p>Finds your target, measures demand and spots the gaps your competitors leave.</p>
+        <ul><li>TAM / SAM / SOM</li><li>Benchmark</li><li>Positioning</li></ul>
+        <span class="open">Chat with Strategist →</span>
+      </a>
+      <a class="agent" href="#agents" data-agent="designer" style="--c:#f3f1ea">
+        <div class="id"><span>DESIGNER</span>02</div>
+        <h3>Brand</h3><p>Available name, logo, tone of voice and a landing page ready to publish.</p>
+        <ul><li>Naming + domain</li><li>Visual identity</li><li>Site v1</li></ul>
+        <span class="open">Chat with Designer →</span>
+      </a>
+      <a class="agent" href="#agents" data-agent="cfo" style="--c:#8fd6ff">
+        <div class="id"><span>CFO</span>03</div>
+        <h3>Numbers</h3><p>Forecast, break-even, funding needs and your project wallet.</p>
+        <ul><li>36-month forecast</li><li>Break-even</li><li>On-chain wallet</li></ul>
+        <span class="open">Chat with CFO →</span>
+      </a>
+      <a class="agent" href="#agents" data-agent="legal" style="--c:#ff8a5c">
+        <div class="id"><span>LEGAL</span>04</div>
+        <h3>Setup</h3><p>Recommended company type, steps in the right order, documents to prepare.</p>
+        <ul><li>LLC / Ltd / SAS</li><li>14-step checklist</li><li>Terms templates</li></ul>
+        <span class="open">Chat with Legal →</span>
+      </a>
+    </div>
+  </div></section>
+
+  <div class="ticker" aria-hidden="true"><div>
+    Idea<em>→</em>Company<em>■</em>4 agents in parallel<em>■</em>Robinhood Chain<em>■</em>Your idea stays yours<em>■</em>
+    Idea<em>→</em>Company<em>■</em>4 agents in parallel<em>■</em>Robinhood Chain<em>■</em>Your idea stays yours<em>■</em>
+  </div></div>
+
+  <section class="final" data-shape="0"><div class="wrap"><div class="col">
+    <span class="eyebrow mono">Early access</span>
+    <h2>Stop thinking<br>about it.<br><span class="lime">Launch it.</span></h2>
+    <p class="lead">First wave limited to 100 founders. Describe your project, Entorax handles the rest.</p>
+    <div class="ctas"><a class="btn primary" href="#agents">Start my project →</a><a class="btn" href="#token">$ENTORAX</a></div>
+  </div></div></section>
+  </div>
+
+  <!-- HOW -->
+  <section class="view" id="v-how" data-shape="1" hidden><div class="wrap"><div class="col">
+    <span class="eyebrow mono">How it works</span>
+    <h2>Four phases.<br><span class="out">No blank page.</span></h2>
+    <div class="phase-tabs" role="tablist" aria-label="Phases">
+      <button role="tab" aria-selected="true" data-p="0">01 Tell</button>
+      <button role="tab" aria-selected="false" data-p="1">02 Research</button>
+      <button role="tab" aria-selected="false" data-p="2">03 Build</button>
+      <button role="tab" aria-selected="false" data-p="3">04 Launch</button>
+    </div>
+    <div class="phase-panel" id="phasePanel" role="tabpanel"></div>
+  </div></div></section>
+
+  <!-- AI SPACE -->
+  <section class="view" id="v-agents" data-shape="3" hidden><div class="wrap">
+    <div class="space">
+      <aside class="side" aria-label="Agents">
+        <span class="mono">Your team</span>
+        <div id="agentList" style="display:contents"></div>
+        <div class="foot">Each agent keeps its own conversation. Answers are AI-generated: double-check anything legal or financial with a professional.</div>
+      </aside>
+      <section class="chat" aria-label="Chat">
+        <div class="chat-head">
+          <div class="who"><span class="av" id="headAv"></span><div><b id="headName">Entorax Team</b><div class="st" id="headSt">ONLINE</div></div></div>
+          <button class="ghost-btn" type="button" id="clearChat">New chat</button>
+        </div>
+        <div class="msgs" id="msgs" aria-live="polite"></div>
+        <form class="compose" id="compose">
+          <label for="msgIn" class="mono" hidden>Message</label>
+          <textarea id="msgIn" rows="1" placeholder="Message the agent…"></textarea>
+          <button class="btn primary sm" type="submit" id="sendBtn">Send</button>
+          <button class="btn sm" type="button" id="stopBtn" hidden>Stop</button>
+        </form>
+        <div class="note" id="chatNote"></div>
+      </section>
+    </div>
+  </div></section>
+
+  <!-- TOKEN -->
+  <section class="view" id="v-token" data-shape="3" hidden><div class="wrap"><div class="col" style="max-width:720px">
+    <span class="eyebrow mono">$ENTORAX</span>
+    <h2>The token<br><span class="out">isn't out</span> <span class="lime">yet.</span></h2>
+    <p class="lead">$ENTORAX will launch on Robinhood Chain. Until then there is no official contract: any address you see elsewhere is not ours.</p>
+    <div class="ca-big"><span>CA</span><span class="v" id="caBig">Not live yet. Announced here first.</span><button type="button" data-copy>COPY</button></div>
+    <div class="cards">
+      <div class="card"><span class="mono">Network</span><b>Robinhood Chain</b><p>Project wallets and payments settle on-chain.</p></div>
+      <div class="card"><span class="mono">Use</span><b>Agent access</b><p>Unlock longer sessions and more agents in the AI Space.</p></div>
+      <div class="card"><span class="mono">Supply</span><b>TBA</b><p>Details published before launch, in Docs.</p></div>
+    </div>
+  </div></div></section>
+
+  <!-- DOCS -->
+  <section class="view" id="v-docs" data-shape="2" hidden><div class="wrap"><div class="col" style="max-width:680px">
+    <span class="eyebrow mono">Docs</span>
+    <h2>The <span class="lime">short</span> version.</h2>
+    <div class="docs">
+      <details open><summary>What is Entorax?</summary><p>An AI co-founder. You describe a project, and four specialised agents help you turn it into a business: research, branding, financial plan, legal setup.</p></details>
+      <details><summary>Who are the agents?</summary><p>Strategist (market and competitors), Designer (name, logo, site), CFO (forecast, break-even, funding) and Legal (company type, steps, documents). The Entorax Team chat coordinates all four.</p></details>
+      <details><summary>Does Entorax own my idea?</summary><p>No. Your project and everything the agents produce for it belong to you.</p></details>
+      <details><summary>Why Robinhood Chain?</summary><p>Each project can get its own wallet to receive payments, pay suppliers and raise from its community, with every movement traceable.</p></details>
+      <details><summary>Is this legal or financial advice?</summary><p>No. The agents give you a solid first draft. Check legal and financial decisions with a qualified professional.</p></details>
+    </div>
+  </div></div></section>
+</main>
+
+<footer><div class="wrap mono"><span>© 2026 Entorax</span><span>Built on Robinhood Chain</span><span>v0.1 · Private beta</span></div></footer>
+
+<div class="hud" role="group" aria-label="3D scene controls">
+  <span class="rec"></span><span class="lbl"><b>4</b> AGENTS ONLINE</span>
+  <button type="button" id="pause" aria-label="Pause"><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect x="1" y="1" width="3" height="8"/><rect x="6" y="1" width="3" height="8"/></svg></button>
+  <button type="button" id="replay" aria-label="Replay"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ---------- 3D scene ---------- */
+window.Scene = (function(){
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const canvas = document.getElementById('scene');
+const api = {setShape(){}, replay(){}};
+if(!window.THREE) return api;
+let renderer;
+try{ renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true}); }catch(e){ return api; }
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, .1, 200);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x1a1a14, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 1.25);
+sun.position.set(9,16,11); sun.castShadow = true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-16,right:16,top:16,bottom:-16,near:1,far:60});
+sun.shadow.bias = -0.0008; scene.add(sun);
+const rim = new THREE.DirectionalLight(0xd4ff00, .45); rim.position.set(-12,3,-6); scene.add(rim);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(90,90), new THREE.ShadowMaterial({color:0x000000, opacity:.55}));
+ground.rotation.x = -Math.PI/2; ground.position.y = -6.6; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(40, 40, 0x2b2b25, 0x1a1a17); grid.position.y = -6.59; scene.add(grid);
+
+let seed = 11; const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647;
+function grainTex(base){
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'); g.fillStyle = base; g.fillRect(0,0,128,128);
+  const d = g.getImageData(0,0,128,128);
+  for(let i=0;i<d.data.length;i+=4){ const n=(Math.random()-.5)*16; d.data[i]+=n; d.data[i+1]+=n; d.data[i+2]+=n; }
+  g.putImageData(d,0,0);
+  for(let i=0;i<120;i++){ g.fillStyle=`rgba(0,0,0,${Math.random()*.15})`; const s=Math.random()*2; g.fillRect(Math.random()*128,Math.random()*128,s,s); }
+  g.strokeStyle='rgba(0,0,0,.16)'; g.lineWidth=3; g.strokeRect(0,0,128,128);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+const whiteMats = ['#f4f2ec','#ebe9e2','#e2e0d8'].map(b=> new THREE.MeshStandardMaterial({map:grainTex(b), roughness:.85}));
+const limeMat = new THREE.MeshStandardMaterial({map:grainTex('#ffffff'), color:0xd4ff00, roughness:.5, emissive:0xb6e000, emissiveIntensity:.45});
+const darkMat = new THREE.MeshStandardMaterial({map:grainTex('#3a3a34'), roughness:.9});
+const geo = new THREE.BoxGeometry(.96,.96,.96);
+
+const cells = [];
+function rect(c0,c1,r0,r1,o){ for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++) cells.push({c,r,o:!!o}); }
+rect(0,5,0,1); rect(0,1,2,7); rect(2,4,6,7); rect(3,4,8,9); rect(4,8,3,4); rect(7,8,5,8); rect(7,8,0,1,true);
+
+const group = new THREE.Group(); scene.add(group);
+const cubes = [];
+for(const layer of [0.5,-0.5]) for(const cl of cells){
+  const m = new THREE.Mesh(geo, cl.o ? limeMat : whiteMats[Math.floor(rnd()*3)]);
+  m.castShadow = true; m.receiveShadow = true; group.add(m);
+  cubes.push({m, cl, layer, o:cl.o, d:rnd()*.5, ph:rnd()*6.28, pop:0});
+}
+const N = cubes.length, V = (x,y,z)=>new THREE.Vector3(x,y,z);
+const shapes = [[],[],[],[]], rots = [[],[],[],[]];
+cubes.forEach((k,i)=>{ shapes[0][i]=V(k.cl.c-4, 4.5-k.cl.r, k.layer); rots[0][i]=V(0,0,0); });
+cubes.forEach((k,i)=>{ const u=rnd()*2-1, a=rnd()*6.283, r=3.5+rnd()*5.5, s=Math.sqrt(1-u*u);
+  shapes[1][i]=V(Math.cos(a)*s*r, u*r*.75, Math.sin(a)*s*r); rots[1][i]=V(rnd()*6.28,rnd()*6.28,rnd()*6.28); });
+const stoneIdx = cubes.map((k,i)=>k.o?-1:i).filter(i=>i>=0), orIdx = cubes.map((k,i)=>k.o?i:-1).filter(i=>i>=0);
+{ const Hs=[3,4,5,6,8]; let n=0; const y0=-6.1;
+  Hs.forEach((h,b)=>{ const bx=-6+b*3; for(let l=0;l<h;l++) for(let q=0;q<4;q++){ const i=stoneIdx[n++]; shapes[2][i]=V(bx+(q&1)-.5, y0+l, (q>>1)-.5); rots[2][i]=V(0,0,0);} });
+  orIdx.forEach((i,q)=>{ shapes[2][i]=V(6+(q&1)-.5, y0+8+((q>>2)&1), ((q>>1)&1)-.5); rots[2][i]=V(0,0,0); });
+  n=0;
+  for(let a=0;a<10;a++) for(let b=0;b<10;b++){ const i=stoneIdx[n++]; shapes[3][i]=V(a-4.5,-4.2,b-4.5); rots[3][i]=V(0,0,0); }
+  [[-4.5,-4.5],[4.5,-4.5],[-4.5,4.5],[4.5,4.5]].forEach(([x,z])=>{ const i=stoneIdx[n++]; shapes[3][i]=V(x,-3.2,z); rots[3][i]=V(0,0,0); });
+  orIdx.forEach((i,q)=>{ shapes[3][i]=V((q&1)-.5, -2.2+((q>>2)&1), ((q>>1)&1)-.5); rots[3][i]=V(0,0,0); });
+}
+const camCfg = [{y:1.6,ly:0,z:24},{y:3,ly:0,z:25},{y:7,ly:-1.5,z:25},{y:13,ly:-3,z:22}];
+
+const debris=[];
+for(let i=0;i<26;i++){ const m=new THREE.Mesh(geo, i%4===0?limeMat:(i%2?darkMat:whiteMats[i%3])); m.scale.setScalar(.25+rnd()*.35); m.castShadow=true; group.add(m);
+  debris.push({m, r:7.5+rnd()*4, a:rnd()*6.28, y:-5+rnd()*10, sp:(rnd()*.5+.15)*(rnd()<.5?-1:1), rs:V(rnd(),rnd(),rnd())}); }
+const pg=new THREE.BufferGeometry(), P=[]; for(let i=0;i<300;i++) P.push((rnd()-.5)*70,(rnd()-.5)*36,-24+rnd()*30);
+pg.setAttribute('position', new THREE.Float32BufferAttribute(P,3));
+const dust = new THREE.Points(pg, new THREE.PointsMaterial({color:0xd4ff00, size:1.8, sizeAttenuation:false, transparent:true, opacity:.55}));
+scene.add(dust);
+
+const labelHost = document.getElementById('labels');
+const findCube = (c,r,o)=> cubes.findIndex(k=>k.cl.c===c&&k.cl.r===r&&k.layer===.5&&k.o===!!o);
+const labels = [
+  {i:findCube(0,0), c:'#d4ff00', name:'STRATEGIST', st:['scanning market','benchmark','target locked']},
+  {i:findCube(8,3), c:'#f3f1ea', name:'DESIGNER', st:['naming','logo v1','landing page']},
+  {i:findCube(8,0,1), c:'#8fd6ff', name:'CFO', st:['forecasting','break-even','wallet ready']},
+  {i:findCube(3,9), c:'#ff8a5c', name:'LEGAL', st:['checking','bylaws','checklist']},
+].map(L=>{ const el=document.createElement('div'); el.className='tag'; el.innerHTML=`<span class="d" style="background:${L.c};box-shadow:0 0 8px ${L.c}"></span><b>${L.name}</b><i>${L.st[0]}</i>`; labelHost.appendChild(el); L.el=el; L.sub=el.querySelector('i'); return L; });
+let stI=0; setInterval(()=>{ stI++; labels.forEach((L,j)=>{ L.sub.textContent=L.st[(stI+j)%L.st.length]; }); }, 2200);
+
+const sm = x=> x<=0?0:x>=1?1:x*x*(3-2*x);
+let W=0,H=0,mobile=false;
+function resize(){ W=innerWidth; H=innerHeight; mobile=W<980;
+  renderer.setSize(W,H,false); camera.aspect=W/H;
+  if(mobile) camera.clearViewOffset(); else camera.setViewOffset(W,H,-W*.21,0,W,H);
+  camera.updateProjectionMatrix(); group.scale.setScalar(mobile?.72:1); if(api._scroll) api.measure(); }
+addEventListener('resize',resize); resize();
+let mx=0,my=0; addEventListener('pointermove',e=>{ mx=e.clientX/W-.5; my=e.clientY/H-.5; });
+
+/* morph state: from snapshot -> target shape */
+let target=0, morph=1, scrollMode=false, started=false, secs=[];
+const fromP = cubes.map((k,i)=>shapes[1][i].clone().multiplyScalar(1.8));
+const fromR = cubes.map((k,i)=>rots[1][i].clone());
+let intro = reduce?1:0;
+function snap(){ if(!started) return; cubes.forEach((k,i)=>{ fromP[i].copy(k.m.position); fromR[i].set(k.m.rotation.x,k.m.rotation.y,k.m.rotation.z); }); morph=reduce?1:0; }
+api.setShape = s => { if(!scrollMode && s===target) return; scrollMode=api._scroll=false; snap(); target=s; };
+api.measure = () => { secs=[...document.querySelectorAll('#v-home [data-shape]')].map(s=>{ const r=s.getBoundingClientRect(); return {c:r.top+scrollY+r.height/2, s:+s.dataset.shape}; }).filter(x=>x.c>0); };
+api.setScroll = () => { if(!scrollMode){ snap(); scrollMode=api._scroll=true; } api.measure(); };
+function scrollState(){
+  const y=scrollY+innerHeight*.5;
+  if(!secs.length) return {a:0,b:0,f:0};
+  if(y<=secs[0].c) return {a:secs[0].s,b:secs[0].s,f:0};
+  for(let i=0;i<secs.length-1;i++){ if(y<secs[i+1].c) return {a:secs[i].s,b:secs[i+1].s,f:(y-secs[i].c)/(secs[i+1].c-secs[i].c)}; }
+  const l=secs[secs.length-1].s; return {a:l,b:l,f:0};
+}
+addEventListener('load',()=>{ if(scrollMode) api.measure(); });
+if(document.fonts) document.fonts.ready.then(()=>{ if(scrollMode) api.measure(); });
+api.replay = () => { cubes.forEach((k,i)=>{ fromP[i].copy(shapes[1][i]).multiplyScalar(1.8); fromR[i].copy(rots[1][i]); }); morph=reduce?1:0; intro=reduce?1:0; };
+if(!reduce) morph=0;
+
+let t=0, paused=false, last=performance.now(), popClock=0;
+const gP=V(0,0,0), gR=V(0,0,0);
+const camLook=V(0,0,0), tmp=V(0,0,0), pa=V(0,0,0), ra=V(0,0,0), camPos=V(0,camCfg[0].y,camCfg[0].z);
+function frame(now){
+  const dt=Math.min((now-last)/1000,.05); last=now;
+  if(!paused){ t+=dt; morph=Math.min(1,morph+dt/(intro<1?2.8:1.6)); if(morph>=1) intro=1; popClock+=dt; }
+  if(!paused && !reduce && popClock>1.4){ popClock=0; cubes[Math.floor(Math.random()*N)].pop=1; }
+  started=true;
+  const S = scrollMode ? scrollState() : null;
+  for(let i=0;i<N;i++){
+    const k=cubes[i], fk=sm(morph*1.5-k.d);
+    if(S){ const g=sm(S.f*1.5-k.d); gP.copy(shapes[S.a][i]).lerp(shapes[S.b][i],g); gR.copy(rots[S.a][i]).lerp(rots[S.b][i],g); }
+    else { gP.copy(shapes[target][i]); gR.copy(rots[target][i]); }
+    pa.copy(fromP[i]).lerp(gP, fk);
+    ra.copy(fromR[i]).lerp(gR, fk);
+    if(!reduce && fk>=1) pa.y+=Math.sin(t*1.3+k.ph)*.035;
+    if(k.pop>0 && fk>=1){ if(!paused) k.pop=Math.max(0,k.pop-dt*.7); pa.z+=Math.sin(k.pop*Math.PI)*.9; }
+    k.m.position.copy(pa); k.m.rotation.set(ra.x,ra.y,ra.z);
   }
-  if (!process.env.GROQ_API_KEY) {
-    return res.status(500).json({ error: "GROQ_API_KEY is missing on the server." });
+  debris.forEach(d=>{ const a=d.a+t*d.sp*.25; d.m.position.set(Math.cos(a)*d.r, d.y+Math.sin(t*.6+d.r)*.4, Math.sin(a)*d.r); d.m.rotation.set(t*d.rs.x,t*d.rs.y,t*d.rs.z); });
+  dust.rotation.y=t*.01;
+  limeMat.emissiveIntensity = .4 + Math.sin(t*2)*.12;
+  let cy,cz,cl,rate=.04;
+  if(S){ const A=camCfg[S.a],B=camCfg[S.b],f=sm(S.f); cy=A.y+(B.y-A.y)*f; cz=A.z+(B.z-A.z)*f; cl=A.ly+(B.ly-A.ly)*f; rate=.08; }
+  else { const cc=camCfg[target]; cy=cc.y; cz=cc.z; cl=cc.ly; }
+  camPos.lerp(tmp.set(0,cy,cz), rate); camera.position.copy(camPos);
+  camLook.y+=(cl-camLook.y)*rate; camera.lookAt(camLook);
+  group.rotation.y += ((reduce?0:Math.sin(t*.28)*.45) + mx*.35 - group.rotation.y)*.06;
+  group.rotation.x += (my*.08 - group.rotation.x)*.06;
+  renderer.render(scene,camera);
+  if(!mobile){ labels.forEach(L=>{ cubes[L.i].m.getWorldPosition(tmp); tmp.project(camera);
+    L.el.style.transform=`translate(${(tmp.x*.5+.5)*W+30}px,${(-tmp.y*.5+.5)*H-14}px)`;
+    L.el.style.opacity=(morph>.9&&tmp.z<1)?1:0; }); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+const pBtn=document.getElementById('pause'), pauseIcon=pBtn.innerHTML, playIcon='<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M2 1l7 4-7 4z"/></svg>';
+pBtn.onclick=()=>{ paused=!paused; pBtn.innerHTML=paused?playIcon:pauseIcon; pBtn.setAttribute('aria-label',paused?'Play':'Pause'); };
+document.getElementById('replay').onclick=()=>api.replay();
+return api;
+})();
+
+/* ---------- CA ---------- */
+/* Paste the address here on launch, e.g. "0xAbC...123" */
+const CONTRACT_ADDRESS = "";
+(function(){
+  if(CONTRACT_ADDRESS){ document.getElementById('ca').textContent=CONTRACT_ADDRESS; document.getElementById('caBig').textContent=CONTRACT_ADDRESS; }
+  document.querySelectorAll('[data-copy]').forEach(btn=>{
+    const lbl=btn.querySelector('.lbl')||btn, orig=lbl.textContent;
+    btn.onclick=async()=>{
+      if(!CONTRACT_ADDRESS){ lbl.textContent='SOON'; setTimeout(()=>lbl.textContent=orig,1600); return; }
+      try{ await navigator.clipboard.writeText(CONTRACT_ADDRESS); lbl.textContent='COPIED ✓'; }
+      catch(e){ const r=document.createRange(); r.selectNodeContents(document.getElementById('ca')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); lbl.textContent='SELECTED'; }
+      setTimeout(()=>lbl.textContent=orig,1600);
+    };
+  });
+})();
+
+/* ---------- How it works phases ---------- */
+const PHASES=[
+  {shape:1, n:'01', t:'You tell', p:'One sentence, a voice note, a sketch. The agent asks the right questions until the idea stands up: who it\'s for, why they\'d pay, and how much.', c:['3-minute brief','No jargon']},
+  {shape:2, n:'02', t:'They research', p:'Market size, competitors, real prices. The data stacks up and the Strategist shows you where there is room.', c:['Market study','Competitor map','Persona','Pricing']},
+  {shape:3, n:'03', t:'They build', p:'Name, logo, landing page, 36-month forecast, company type. Block by block, and you approve each step before the next.', c:['Brand identity','Site v1','Forecast','Legal checklist']},
+  {shape:0, n:'04', t:'You launch', p:'Your project gets its own wallet on Robinhood Chain: get paid, pay suppliers, raise from your community. Every move is traceable.', c:['Project wallet','Payments','Community raise']},
+];
+function showPhase(i){
+  document.querySelectorAll('.phase-tabs button').forEach(b=>b.setAttribute('aria-selected', String(+b.dataset.p===i)));
+  const P=PHASES[i], el=document.getElementById('phasePanel');
+  el.innerHTML=`<div class="num">${P.n}</div><h3>${P.t}</h3><p>${P.p}</p><div class="chips">${P.c.map(x=>`<span>${x}</span>`).join('')}</div>`;
+  el.style.animation='none'; void el.offsetWidth; el.style.animation='rise .45s cubic-bezier(.2,.7,.2,1)';
+  if(document.body.dataset.view==='how') Scene.setShape(P.shape);
+  curPhase=i;
+}
+let curPhase=0;
+document.querySelectorAll('.phase-tabs button').forEach(b=>b.onclick=()=>showPhase(+b.dataset.p));
+document.querySelector('.phase-tabs').addEventListener('keydown',e=>{ if(e.key==='ArrowRight'||e.key==='ArrowLeft'){ const n=(curPhase+(e.key==='ArrowRight'?1:3))%4; showPhase(n); document.querySelector(`.phase-tabs [data-p="${n}"]`).focus(); }});
+showPhase(0);
+
+/* ---------- Router ---------- */
+const VIEWS=['home','how','agents','token','docs'];
+function route(){
+  const name=VIEWS.includes(location.hash.slice(1))?location.hash.slice(1):'home';
+  document.body.dataset.view=name;
+  VIEWS.forEach(v=>{ const el=document.getElementById('v-'+v); el.hidden=v!==name; el.classList.toggle('in', v===name); });
+  document.querySelectorAll('nav a, .mnav a').forEach(a=>{ if(a.getAttribute('href')==='#'+name) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
+  scrollTo(0,0);
+  if(name==='home') Scene.setScroll();
+  else Scene.setShape(name==='how' ? PHASES[curPhase].shape : +document.getElementById('v-'+name).dataset.shape);
+  if(name==='agents') Chat.focus();
+}
+addEventListener('hashchange',route);
+
+/* ---------- AI Space chat ---------- */
+window.Chat=(function(){
+  const AG={
+    team:{name:'Entorax Team',ini:'E',c:'#d4ff00',sub:'Coordinates all four',role:'the Entorax Team coordinator. You speak for four specialists (Strategist, Designer, CFO, Legal). For a new idea, give a quick verdict, then one line per specialist on what they would do first, labelled with their name.',
+      sugg:['Here is my idea: a vintage sneaker resale app for students','What should I do first to start a business?','Turn my idea into a 4-week plan']},
+    strategist:{name:'Strategist',ini:'S',c:'#d4ff00',sub:'Market, competitors, pricing',role:'the Strategist. You handle market sizing, target customers, competitors, positioning and pricing.',
+      sugg:['Who is my ideal customer?','How do I size my market?','How should I price my product?']},
+    designer:{name:'Designer',ini:'D',c:'#f3f1ea',sub:'Name, logo, landing page',role:'the Designer. You handle naming, brand identity, tone of voice and landing page structure.',
+      sugg:['Give me 5 name ideas for my project','What should my landing page say?','Describe a visual identity for my brand']},
+    cfo:{name:'CFO',ini:'$',c:'#8fd6ff',sub:'Forecast, break-even, funding',role:'the CFO. You handle cost structure, revenue model, simple forecasts, break-even and funding options, including community raising with an on-chain project wallet.',
+      sugg:['Help me estimate my break-even','What revenue model fits my idea?','How much money do I need to start?']},
+    legal:{name:'Legal',ini:'L',c:'#ff8a5c',sub:'Company type, steps, documents',role:'Legal. You explain company types, setup steps, required documents and common pitfalls, in general terms, noting that rules depend on the country.',
+      sugg:['Which company type should I choose?','List the steps to register my company','What documents do I need before selling?']},
+  };
+  const LOOK={team:{bg:'#0a0a09',bd:'#d4ff00',fg:'#d4ff00'},strategist:{bg:'#0a0a09',bd:'#d4ff00',fg:'#d4ff00'},designer:{bg:'#f3f1ea',bd:'#f3f1ea',fg:'#0a0a09'},cfo:{bg:'#8fd6ff',bd:'#8fd6ff',fg:'#0a0a09'},legal:{bg:'#ff8a5c',bd:'#ff8a5c',fg:'#0a0a09'}};
+  const ICON={
+    team:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7" r="3.3"/><circle cx="5.3" cy="8.6" r="2.5"/><circle cx="18.7" cy="8.6" r="2.5"/><path d="M6.4 20v-2.6a5.6 5.6 0 0 1 11.2 0V20z"/><path d="M1 20v-1.9a4.2 4.2 0 0 1 6.3-3.6 7.4 7.4 0 0 0-2.4 3.4V20z"/><path d="M23 20v-1.9a4.2 4.2 0 0 0-6.3-3.6 7.4 7.4 0 0 1 2.4 3.4V20z"/></svg>',
+    strategist:'<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="15" width="4.2" height="6" rx=".5"/><rect x="9.6" y="12" width="4.2" height="9" rx=".5"/><rect x="16.2" y="9" width="4.2" height="12" rx=".5"/><path d="M3 12.2C8 11 13 8.6 17.6 4.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M14.6 3.3 21 2.6l-1.6 6.2z"/></svg>',
+    designer:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4.5 12.5A7.5 7.5 0 0 1 19.5 12.5"/><path d="M3 4.5h18"/><rect x="2" y="3.2" width="2.6" height="2.6" fill="currentColor"/><rect x="19.4" y="3.2" width="2.6" height="2.6" fill="currentColor"/><rect x="10.7" y="3.2" width="2.6" height="2.6" fill="currentColor"/><path d="M12 7.5l4.6 6.3-2.6 3.4h-4l-2.6-3.4z" fill="currentColor"/><circle cx="12" cy="13" r="1.1" fill="var(--av-bg)" stroke="none"/><path d="M12 8v4" stroke="var(--av-bg)" stroke-width="1.1"/><rect x="9.3" y="18.6" width="5.4" height="2.6" rx=".4" fill="currentColor" stroke="none"/></svg>',
+    cfo:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="var(--av-bg)" stroke-width="1.3"><ellipse cx="16" cy="15.5" rx="5.5" ry="2.2"/><ellipse cx="16" cy="12.3" rx="5.5" ry="2.2"/><ellipse cx="16" cy="9.1" rx="5.5" ry="2.2"/><ellipse cx="16" cy="5.9" rx="5.5" ry="2.2"/><ellipse cx="7.5" cy="19.2" rx="5.5" ry="2.2"/><ellipse cx="7.5" cy="16" rx="5.5" ry="2.2"/><ellipse cx="7.5" cy="12.8" rx="5.5" ry="2.2"/></svg>',
+    legal:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="3.6" r="1.7"/><path d="M12 4.5V19M4.5 6.5h15M4.8 6.8 2.3 12.5M4.8 6.8l2.5 5.7M19.2 6.8l-2.5 5.7M19.2 6.8l2.5 5.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M1.3 12.6h7a3.5 3.5 0 0 1-7 0zM15.7 12.6h7a3.5 3.5 0 0 1-7 0z"/><rect x="7" y="19" width="10" height="2.4" rx=".6"/></svg>'
+  };
+  const avatar = k => `<span class="av" style="--av-bg:${LOOK[k].bg};--av-bd:${LOOK[k].bd};--av-fg:${LOOK[k].fg}" aria-hidden="true">${ICON[k]}</span>`;
+  // The agents' instructions live on the server (api/chat.js).
+
+  const list=document.getElementById('agentList'), msgs=document.getElementById('msgs'), input=document.getElementById('msgIn'),
+        form=document.getElementById('compose'), sendBtn=document.getElementById('sendBtn'), stopBtn=document.getElementById('stopBtn'), note=document.getElementById('chatNote');
+  let cur='team', busy=false, ctl=null, hist={};
+  try{ hist=JSON.parse(localStorage.getItem('entorax-chat')||'{}')||{}; }catch(e){ hist={}; }
+  Object.keys(AG).forEach(k=>{ if(!Array.isArray(hist[k])) hist[k]=[]; });
+  const save=()=>{ try{ localStorage.setItem('entorax-chat', JSON.stringify(hist)); }catch(e){} };
+
+
+  Object.entries(AG).forEach(([k,a])=>{
+    const b=document.createElement('button'); b.type='button'; b.className='ag'; b.dataset.k=k;
+    b.innerHTML=`${avatar(k)}<span class="sep"></span><span><b>${a.name}</b><small>${a.sub}</small></span>`;
+    b.onclick=()=>select(k); list.appendChild(b);
+  });
+
+  const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt=s=>esc(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+
+  function bubble(role,text,opts={}){
+    const d=document.createElement('div'); d.className='msg '+role+(opts.err?' err':'');
+    if(role==='assistant'){ const by=document.createElement('span'); by.className='by'; by.textContent=AG[cur].name; d.appendChild(by); }
+    const body=document.createElement('span'); d.appendChild(body);
+    if(opts.thinking){ body.textContent='Thinking'; body.className='thinking'; }
+    else if(role==='assistant') body.innerHTML=fmt(text); else body.textContent=text;
+    msgs.appendChild(d); msgs.scrollTop=msgs.scrollHeight; return body;
   }
-
-  const { agent, messages } = req.body || {};
-  const cleaned = cleanMessages(messages);
-  if (!ROLES[agent] || !cleaned) {
-    return res.status(400).json({ error: "Send an agent name and a conversation ending with a user message." });
-  }
-
-  const ctl = new AbortController();
-  req.on("close", () => ctl.abort());
-
-  let upstream;
-  try {
-    upstream = await fetch(GROQ_URL, {
-      method: "POST",
-      signal: ctl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        stream: true,
-        max_tokens: 1200,
-        temperature: 0.6,
-        messages: [{ role: "system", content: systemPrompt(agent) }, ...cleaned],
-      }),
-    });
-  } catch (err) {
-    if (ctl.signal.aborted) return res.end();
-    console.error("groq fetch failed", err);
-    return res.status(502).json({ error: "The agent couldn't answer." });
-  }
-
-  if (!upstream.ok || !upstream.body) {
-    console.error("groq error", upstream.status, await upstream.text().catch(() => ""));
-    return res.status(upstream.status === 429 ? 429 : 502).json({ error: "The agent couldn't answer." });
-  }
-
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-
-  // Groq streams Server-Sent Events: lines "data: {json}", ending with "data: [DONE]".
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    for await (const chunk of upstream.body) {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for (const line of lines) {
-        const data = line.trim();
-        if (!data.startsWith("data:")) continue;
-        const payload = data.slice(5).trim();
-        if (payload === "[DONE]") continue;
-        try {
-          const text = JSON.parse(payload).choices?.[0]?.delta?.content;
-          if (text) res.write(text);
-        } catch {
-          // ignore a malformed line
-        }
-      }
+  function render(){
+    msgs.innerHTML='';
+    const a=AG[cur];
+    document.querySelectorAll('.ag').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.k===cur)));
+    document.getElementById('headAv').outerHTML=avatar(cur).replace('class="av"','class="av" id="headAv"');
+    document.getElementById('headName').textContent=a.name;
+    input.placeholder=`Message ${a.name}…`;
+    if(!hist[cur].length){
+      const w=document.createElement('div'); w.className='welcome';
+      w.innerHTML=`<span class="eyebrow mono">${esc(a.sub)}</span><h3>Talk to <span class="lime">${esc(a.name)}</span></h3><p>Describe your project or pick a starting point.</p><div class="chips"></div>`;
+      const chips=w.querySelector('.chips');
+      a.sugg.forEach(s=>{ const b=document.createElement('button'); b.type='button'; b.textContent=s; b.onclick=()=>send(s); chips.appendChild(b); });
+      msgs.appendChild(w); return;
     }
-  } catch (err) {
-    if (!ctl.signal.aborted) console.error("groq stream error", err);
+    hist[cur].forEach(m=>bubble(m.role,m.content,{err:m.err}));
   }
-  res.end();
-}
+  function select(k){ if(busy) return; cur=k; render(); input.focus(); }
+
+  async function send(text){
+    text=(text||'').trim(); if(!text||busy) return;
+    const k=cur;
+    if(!hist[k].length) msgs.innerHTML='';
+    hist[k].push({role:'user',content:text}); save();
+    bubble('user',text);
+    const body=bubble('assistant','',{thinking:true});
+    input.value=''; autosize();
+    busy=true; ctl=new AbortController(); sendBtn.hidden=true; stopBtn.hidden=false; document.getElementById('headSt').textContent='TYPING…';
+    const turns=hist[k].filter(m=>!m.err).slice(-16).map(m=>({role:m.role,content:m.content}));
+    while(turns.length && turns[0].role!=='user') turns.shift();
+    let ans='';
+    try{
+      const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent:k,messages:turns}),signal:ctl.signal});
+      if(!res.ok || !res.body){ const e=new Error('http'); e.status=res.status; try{ e.detail=(await res.json()).error; }catch(_){ e.detail='Server error '+res.status+(res.status===404?' (api/chat not found)':''); } throw e; }
+      const reader=res.body.getReader(), dec=new TextDecoder();
+      for(;;){
+        const {done,value}=await reader.read(); if(done) break;
+        ans+=dec.decode(value,{stream:true});
+        body.className=''; body.innerHTML=fmt(ans); msgs.scrollTop=msgs.scrollHeight;
+      }
+      if(!ans.trim()){ const e=new Error('empty'); throw e; }
+      hist[k].push({role:'assistant',content:ans});
+    }catch(e){
+      body.className='';
+      if(e && e.name==='AbortError'){ if(ans){ hist[k].push({role:'assistant',content:ans}); } else body.textContent='Stopped.'; }
+      else if(ans){ hist[k].push({role:'assistant',content:ans}); }
+      else { body.textContent=(e&&e.status===429?'Too many messages at once. Wait a moment, then send again.':'The agent couldn\'t answer this time.')+(e&&e.detail?' ['+e.detail+']':''); body.parentNode.classList.add('err'); }
+    }finally{
+      save(); busy=false; sendBtn.hidden=false; stopBtn.hidden=true; document.getElementById('headSt').textContent='ONLINE';
+    }
+  }
+  function autosize(){ input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,160)+'px'; }
+  input.addEventListener('input',autosize);
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(input.value); } });
+  form.addEventListener('submit',e=>{ e.preventDefault(); send(input.value); });
+  stopBtn.onclick=()=>ctl&&ctl.abort();
+  document.getElementById('clearChat').onclick=()=>{ if(busy) return; hist[cur]=[]; save(); render(); };
+  render();
+  return { focus(){ setTimeout(()=>input.focus({preventScroll:true}),50); }, start(text){ select('team'); send(text); }, pick(k){ if(AG[k]) select(k); }, avatar };
+})();
+
+/* Home launcher -> AI Space */
+document.getElementById('launch').addEventListener('submit',e=>{
+  e.preventDefault();
+  const v=document.getElementById('idea').value.trim();
+  location.hash='agents';
+  if(v) Chat.start('Here is my project: '+v);
+});
+
+document.querySelectorAll('.agent[data-agent]').forEach(a=>{ a.querySelector('.id').insertAdjacentHTML('afterbegin', Chat.avatar(a.dataset.agent)); a.addEventListener('click',()=>Chat.pick(a.dataset.agent)); });
+
+route();
+</script>
+</body>
+</html>
