@@ -43,13 +43,14 @@ header,main,footer{position:relative;z-index:3}
 .mono{font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.1em;font-size:12px}
 
 /* CA chip next to Launch app */
-.ca-mini{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 4px 0 12px;border:1px solid var(--line-2);border-radius:999px;font:500 12px var(--f-mono);color:var(--muted);flex:none}
-.ca-mini .tk{color:var(--lime);font-weight:600;letter-spacing:.04em}
-.ca-mini .addr{color:var(--fg);letter-spacing:.03em;font-variant-numeric:tabular-nums}
-.ca-mini .addr i{font-style:normal;color:var(--muted);letter-spacing:.12em}
-.ca-mini .copy{width:30px;height:30px;border-radius:50%;border:0;background:var(--bg-3);color:var(--fg);cursor:pointer;display:grid;place-items:center;position:relative}
-.ca-mini .copy:hover{background:var(--lime);color:#0a0a09}
-.ca-mini .copy.done{background:var(--lime);color:#0a0a09}
+.ca-mini{display:inline-flex;align-items:center;gap:12px;height:38px;padding:0 6px 0 14px;border:1px dashed rgba(212,255,0,.45);border-radius:10px;font:500 12.5px var(--f-mono);flex:none}
+.ca-mini.live{border-style:solid;border-color:rgba(212,255,0,.6)}
+.ca-mini .tk{color:var(--lime);font-weight:600}
+.ca-mini .addr{color:var(--muted)}
+.ca-mini.live .addr{color:var(--fg)}
+.ca-mini .short{display:none;color:var(--lime);font-weight:600}
+.ca-mini .copy{width:28px;height:28px;border-radius:7px;border:0;background:transparent;color:var(--fg);cursor:pointer;display:grid;place-items:center;position:relative}
+.ca-mini .copy:hover,.ca-mini .copy.done{background:var(--lime);color:#0a0a09}
 .ca-tip{position:absolute;top:calc(100% + 8px);right:0;white-space:nowrap;background:var(--fg);color:#0a0a09;font:600 11px var(--f-mono);padding:5px 8px;border-radius:6px;pointer-events:none}
 header{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:rgba(10,10,9,.78);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 header .wrap{display:flex;align-items:center;gap:28px;padding-block:12px}
@@ -59,7 +60,7 @@ nav a{font:500 13px var(--f-body);color:var(--muted);text-decoration:none;paddin
 nav a:hover{color:var(--fg);background:var(--bg-3)}
 nav a[aria-current="page"]{color:#0a0a09;background:var(--fg)}
 nav a .ai{font:600 9px var(--f-mono);background:var(--lime);color:#0a0a09;border-radius:4px;padding:2px 5px;letter-spacing:.06em}
-.btn{font:600 14px var(--f-body);padding:12px 20px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--fg);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:background .15s,border-color .15s,transform .15s}
+.btn{white-space:nowrap;font:600 14px var(--f-body);padding:12px 20px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--fg);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:background .15s,border-color .15s,transform .15s}
 .btn:hover{border-color:var(--fg)}
 .btn.primary{background:var(--lime);border-color:var(--lime);color:#0a0a09}
 .btn.primary:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(212,255,0,.25)}
@@ -231,9 +232,12 @@ header .mnav{display:none}
 }
 @media (max-width:560px){
   .hud .lbl{display:none}
-  .ca-mini .addr{display:none}
+  .ca-mini .tk,.ca-mini .addr{display:none}
+  .ca-mini .short{display:inline}
+  .ca-mini{gap:6px;padding-left:10px}
   header .wrap{gap:12px}
-  .brand{margin-right:auto}
+  .brand{margin-right:auto;font-size:17px;gap:9px}
+  header .btn.sm{padding:9px 13px}
   .msg{max-width:92%}
   .phase-tabs button{font-size:9.5px}
 }
@@ -257,9 +261,10 @@ header .mnav{display:none}
     <a href="#home">Home</a><a href="#how">How it works</a><a href="#agents">AI Space <span class="ai">AI</span></a><a href="#token">$ENTORAX</a><a href="#docs">Docs</a>
   </nav>
   <div class="ca-mini" title="$ENTORAX contract address">
-    <span class="tk">CA:</span>
-    <span class="addr" id="ca">0x<i>····</i>…<i>····</i></span>
-    <button class="copy" type="button" data-copy aria-label="Copy contract address"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="lbl" hidden></span></button>
+    <span class="tk">$ENTORAX</span>
+    <span class="addr" id="ca">CA: coming soon</span>
+    <span class="short">CA</span>
+    <button class="copy" type="button" data-copy aria-label="Copy contract address"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="lbl" hidden></span></button>
   </div>
   <a class="btn sm primary" href="#agents">Launch app</a>
 </div>
@@ -601,7 +606,7 @@ return api;
 /* Paste the address here on launch, e.g. "0xAbC...123" */
 const CONTRACT_ADDRESS = "";
 (function(){
-  if(CONTRACT_ADDRESS){ document.getElementById('ca').textContent=CONTRACT_ADDRESS.slice(0,6)+'…'+CONTRACT_ADDRESS.slice(-4); document.getElementById('caBig').textContent=CONTRACT_ADDRESS; }
+  if(CONTRACT_ADDRESS){ document.getElementById('ca').textContent='CA: '+CONTRACT_ADDRESS.slice(0,6)+'…'+CONTRACT_ADDRESS.slice(-4); document.querySelector('.ca-mini').classList.add('live'); document.getElementById('caBig').textContent=CONTRACT_ADDRESS; }
   document.querySelectorAll('[data-copy]').forEach(btn=>{
     const mini=btn.closest('.ca-mini'), lbl=btn.querySelector('.lbl')||btn, orig=lbl.textContent;
     function flash(msg){
