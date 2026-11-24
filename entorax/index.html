@@ -44,8 +44,9 @@ header,main,footer{position:relative;z-index:3}
 
 /* CA chip next to Launch app */
 .ca-mini{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 4px 0 12px;border:1px solid var(--line-2);border-radius:999px;font:500 12px var(--f-mono);color:var(--muted);flex:none}
-.ca-mini .tk{color:var(--lime);font-weight:600;letter-spacing:.08em}
-.ca-mini .addr{color:var(--fg);letter-spacing:.02em}
+.ca-mini .tk{color:var(--lime);font-weight:600;letter-spacing:.04em}
+.ca-mini .addr{color:var(--fg);letter-spacing:.03em;font-variant-numeric:tabular-nums}
+.ca-mini .addr i{font-style:normal;color:var(--muted);letter-spacing:.12em}
 .ca-mini .copy{width:30px;height:30px;border-radius:50%;border:0;background:var(--bg-3);color:var(--fg);cursor:pointer;display:grid;place-items:center;position:relative}
 .ca-mini .copy:hover{background:var(--lime);color:#0a0a09}
 .ca-mini .copy.done{background:var(--lime);color:#0a0a09}
@@ -231,6 +232,8 @@ header .mnav{display:none}
 @media (max-width:560px){
   .hud .lbl{display:none}
   .ca-mini .addr{display:none}
+  header .wrap{gap:12px}
+  .brand{margin-right:auto}
   .msg{max-width:92%}
   .phase-tabs button{font-size:9.5px}
 }
@@ -254,8 +257,8 @@ header .mnav{display:none}
     <a href="#home">Home</a><a href="#how">How it works</a><a href="#agents">AI Space <span class="ai">AI</span></a><a href="#token">$ENTORAX</a><a href="#docs">Docs</a>
   </nav>
   <div class="ca-mini" title="$ENTORAX contract address">
-    <span class="tk">CA</span>
-    <span class="addr" id="ca">soon</span>
+    <span class="tk">CA:</span>
+    <span class="addr" id="ca">0x<i>····</i>…<i>····</i></span>
     <button class="copy" type="button" data-copy aria-label="Copy contract address"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="lbl" hidden></span></button>
   </div>
   <a class="btn sm primary" href="#agents">Launch app</a>
