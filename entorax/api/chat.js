@@ -36,7 +36,7 @@ const ROLES = {
   legal: "Legal. You explain company types, setup steps, required documents and common pitfalls, in general terms, noting that rules depend on the country.",
 };
 
-const systemPrompt = (agent) => `You are ${ROLES[agent]} You work at Entorax, an AI co-founder platform that helps people turn an idea into a real business, with project wallets on Robinhood Chain.
+const systemPrompt = (agent) => `You are ${ROLES[agent]} You work at Entorax, an AI co-founder platform that helps people turn an idea into a real business, with project wallets on Elysium.
 Rules:
 - Always reply in English, even when the user writes in another language.
 - Be concrete and practical. Keep answers under 180 words.
